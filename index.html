@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14110f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Tarjetas de lyrics</title>
+<style>
+:root{--bg:#14110f;--panel:#201b18;--line:#3a322d;--txt:#f4ede6;--mut:#a99d93;--acc:#e8b04a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 "Trebuchet MS",system-ui,sans-serif;padding:16px;display:flex;flex-direction:column;align-items:center;gap:16px}
+main{width:100%;max-width:460px;display:flex;flex-direction:column;gap:14px}
+h1{font:700 22px/1.2 Georgia,serif;margin:0}
+canvas{width:100%;height:auto;border-radius:12px;display:block;background:transparent}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--mut)}
+input[type=text],textarea,select{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit}
+textarea{min-height:130px;resize:vertical}
+input[type=color]{width:100%;height:42px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:2px}
+input[type=file]{color:var(--mut);font-size:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{background:var(--acc);color:#1b1408;border:0;border-radius:10px;padding:14px;font:700 16px inherit;font-family:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Tarjetas de lyrics</h1>
+  <canvas id="cv"></canvas>
+  <div class="box">
+    <label>Título de la canción<input type="text" id="title" value="Título de la canción"></label>
+    <label>Artista<input type="text" id="artist" value="Artista"></label>
+    <label>Carátula<input type="file" id="file" accept="image/*"></label>
+    <label>Letra<textarea id="lyr">Escribí acá la letra
+que quieras mostrar en la tarjeta</textarea></label>
+  </div>
+  <div class="box">
+    <label>Tipo de fondo
+      <select id="mode"><option value="grad">Degradado de dos colores</option><option value="solid">Un solo color</option></select>
+    </label>
+    <div class="row">
+      <label>Color 1 (inicio)<input type="color" id="c1" value="#000000"></label>
+      <label>Color 2 (final)<input type="color" id="c2" value="#ff0000"></label>
+    </div>
+    <label>Dirección del degradado: <span id="angv">30</span>°<input type="range" id="ang" min="0" max="360" value="30"></label>
+    <label>Color del texto<input type="color" id="tc" value="#ffffff"></label>
+    <label>Bordes redondeados<input type="range" id="rad" min="0" max="200" value="75"></label>
+  </div>
+  <button id="save">Guardar imagen</button>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d'), W = 1500;
+const FONT = 'Roboto, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif';
+let cover = null;
+
+$('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const img = new Image();
+  img.onload = () => { cover = img; draw(); };
+  img.src = URL.createObjectURL(f);
+};
+
+function wrap(text, maxW) {
+  const out = [];
+  text.split('\n').forEach(p => {
+    if (!p.trim()) { out.push(''); return; }
+    let line = '';
+    p.split(' ').forEach(w => {
+      const t = line ? line + ' ' + w : w;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t;
+    });
+    out.push(line);
+  });
+  return out;
+}
+
+function draw() {
+  const c1 = $('c1').value, c2 = $('c2').value, tc = $('tc').value;
+  // La altura de la tarjeta depende de la cantidad de líneas de la letra
+  cv.width = W;
+  ctx.font = '700 64px ' + FONT;
+  const lines = wrap($('lyr').value, 1140);
+  const H = 678 + 90 * Math.max(1, lines.length);
+  cv.height = H;
+
+  ctx.beginPath(); ctx.roundRect(0, 0, W, H, +$('rad').value); ctx.clip();
+  if ($('mode').value === 'grad') {
+    const a = +$('ang').value * Math.PI / 180, dx = Math.sin(a), dy = -Math.cos(a), len = Math.abs(W * dx) + Math.abs(H * dy);
+    const g = ctx.createLinearGradient(W / 2 - dx * len / 2, H / 2 - dy * len / 2, W / 2 + dx * len / 2, H / 2 + dy * len / 2);
+    g.addColorStop(0, c1); g.addColorStop(1, c2); ctx.fillStyle = g;
+  } else ctx.fillStyle = c1;
+  ctx.fillRect(0, 0, W, H);
+
+  // Carátula
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(180, 150, 240, 240, 30); ctx.clip();
+  if (cover) ctx.drawImage(cover, 180, 150, 240, 240);
+  else { ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(180, 150, 240, 240); }
+  ctx.restore();
+
+  // Título (se achica si es muy largo) y artista
+  ctx.fillStyle = tc; ctx.textBaseline = 'alphabetic';
+  const t = $('title').value; let ts = 72;
+  ctx.font = '700 ' + ts + 'px ' + FONT;
+  while (ts > 30 && ctx.measureText(t).width > 900) { ts -= 2; ctx.font = '700 ' + ts + 'px ' + FONT; }
+  ctx.fillText(t, 480, 230);
+  ctx.globalAlpha = .8; ctx.font = '400 46px ' + FONT;
+  ctx.fillText($('artist').value, 480, 312, 900);
+  ctx.globalAlpha = 1;
+
+  // Letra
+  ctx.font = '700 64px ' + FONT;
+  lines.forEach((l, i) => ctx.fillText(l, 180, 562 + i * 90));
+}
+
+['title', 'artist', 'lyr', 'mode', 'c1', 'c2', 'tc', 'rad', 'ang'].forEach(id => $(id).addEventListener('input', draw));
+$('ang').addEventListener('input', () => $('angv').textContent = $('ang').value);
+
+$('save').onclick = () => {
+  draw();
+  const name = ($('title').value.trim() || 'lyrics').replace(/[\\/:*?"<>|]/g, '') + '.png';
+  cv.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, 'image/png');
+};
+draw();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
